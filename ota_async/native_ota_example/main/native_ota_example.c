@@ -121,6 +121,13 @@ static void infinite_loop(void)
     }
 }
 
+static void accumulate_time(int64_t *timer, int64_t start_time, int64_t end_time) {
+    int64_t duration = end_time - start_time;
+    *timer += duration;
+    // ESP_LOGW(TAG, "duration=%lld", duration);
+    // ESP_LOGW(TAG, "accumulate time=%lld", *timer);
+}
+
 static void ota_example_task(void *pvParameter)
 {
     esp_err_t err;
@@ -173,8 +180,18 @@ static void ota_example_task(void *pvParameter)
     int binary_file_length = 0;
     /*deal with all receive packet*/
     bool image_header_was_checked = false;
+
+    ESP_LOGW(TAG, "current heap: %d, minimum ever: %d", xPortGetFreeHeapSize(), xPortGetMinimumEverFreeHeapSize());
+    int64_t time_total = 0; 
+    int64_t time_http = 0; 
+    int64_t time_write = 0; 
+    int64_t time_total_start = esp_timer_get_time();
+
     while (1) {
+        int64_t time_start = esp_timer_get_time();
         int data_read = esp_http_client_read(client, ota_write_data, BUFFSIZE);
+        int64_t time_end = esp_timer_get_time();
+        accumulate_time(&time_http, time_start, time_end);
         if (data_read < 0) {
             ESP_LOGE(TAG, "Error: SSL data read error");
             http_cleanup(client);
@@ -230,7 +247,12 @@ static void ota_example_task(void *pvParameter)
                     task_fatal_error();
                 }
             }
+            // ESP_LOGI(TAG, "esp_ota_write() start");
+            time_start = esp_timer_get_time();
             err = esp_ota_write( update_handle, (const void *)ota_write_data, data_read);
+            time_end = esp_timer_get_time();
+            accumulate_time(&time_write, time_start, time_end);
+            // ESP_LOGW(TAG, "current heap: %d, minimum ever: %d", xPortGetFreeHeapSize(), xPortGetMinimumEverFreeHeapSize());
             if (err != ESP_OK) {
                 http_cleanup(client);
                 task_fatal_error();
@@ -249,6 +271,12 @@ static void ota_example_task(void *pvParameter)
         http_cleanup(client);
         task_fatal_error();
     }
+
+    int64_t time_total_end = esp_timer_get_time();
+    accumulate_time(&time_total, time_total_start, time_total_end);
+    ESP_LOGW(TAG, "time_total=%lld", time_total);
+    ESP_LOGW(TAG, "time_http=%lld", time_http);
+    ESP_LOGW(TAG, "time_write=%lld", time_write);
 
     err = esp_ota_set_boot_partition(update_partition);
     if (err != ESP_OK) {
