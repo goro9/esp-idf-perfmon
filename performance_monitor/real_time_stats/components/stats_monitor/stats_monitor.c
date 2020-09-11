@@ -27,6 +27,15 @@ typedef struct {
 static const char *TAG = "stats_monitor";
 static accumulated_info_t s_accumulated_infos[ACCUMULATED_INFO_NUM];
 
+void stats_monitor_reset_accumulated_infos(void) {
+    for (int i = 0; i < ACCUMULATED_INFO_NUM; i++) {
+        s_accumulated_infos[i].task_name = NULL;
+        s_accumulated_infos[i].time = 0;
+        s_accumulated_infos[i].is_running = false;
+    }
+    ESP_LOGI(TAG, "reseted accumulated infos");
+}
+
 static void set_accumulated_info(accumulated_info_t *info) {
     uint8_t dst_idx = 255;
     for (int i = 0; i < ACCUMULATED_INFO_NUM; i++) {
