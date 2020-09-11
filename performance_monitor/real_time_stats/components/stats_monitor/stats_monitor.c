@@ -10,11 +10,64 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_err.h"
+#include "esp_log.h"
 #include "stats_monitor.h"
 
 #define STATS_TICKS         pdMS_TO_TICKS(1000)
 #define STATS_TASK_PRIO     3
 #define ARRAY_SIZE_OFFSET   5   //Increase this if print_real_time_stats returns ESP_ERR_INVALID_SIZE
+#define ACCUMULATED_INFO_NUM 16
+
+typedef struct {
+    char *task_name;
+    uint64_t time;
+    bool is_running;
+} accumulated_info_t;
+
+static const char *TAG = "stats_monitor";
+static accumulated_info_t s_accumulated_infos[ACCUMULATED_INFO_NUM];
+
+static void set_accumulated_info(accumulated_info_t *info) {
+    uint8_t dst_idx = 255;
+    for (int i = 0; i < ACCUMULATED_INFO_NUM; i++) {
+        if (s_accumulated_infos[i].task_name == info->task_name) {
+            s_accumulated_infos[i].time += info->time;
+            s_accumulated_infos[i].is_running = true;
+            return;
+        }
+        else if (s_accumulated_infos[i].task_name == NULL && dst_idx == 255) {
+            dst_idx = i;
+        }
+    }
+    if (dst_idx == 255) {
+        ESP_LOGE(TAG, "error: accumulated info's buffer is full");
+        return;
+    }
+    s_accumulated_infos[dst_idx].task_name = info->task_name;
+    s_accumulated_infos[dst_idx].time = info->time;
+    s_accumulated_infos[dst_idx].is_running = true;
+}
+
+static accumulated_info_t *get_accumulated_info(const char *task_name) {
+    for (int i = 0; i < ACCUMULATED_INFO_NUM; i++) {
+        if (s_accumulated_infos[i].task_name == task_name) {
+            return &s_accumulated_infos[i];
+        }
+    }
+    return NULL;
+}
+
+static void end_calc_accumulated_info(void) {
+    for (int i = 0; i < ACCUMULATED_INFO_NUM; i++) {
+        if (!s_accumulated_infos[i].is_running) {
+            s_accumulated_infos[i].task_name = NULL;
+            s_accumulated_infos[i].time = 0;
+        }
+        else {
+            s_accumulated_infos[i].is_running = false;
+        }
+    }
+}
 
 /**
  * @brief   Function to print the CPU usage of tasks over a given duration.
@@ -83,8 +136,8 @@ static esp_err_t print_real_time_stats(TickType_t xTicksToWait)
         goto exit;
     }
 
-    printf("| Task | Run Time | Percentage\n");
-    printf("| --- | --- | ---\n");
+    printf("| Task | Run Time | Run Time(Accumulated) | Percentage\n");
+    printf("| --- | --- | --- | ---\n");
     //Match each task in start_array to those in the end_array
     for (int i = 0; i < start_array_size; i++) {
         int k = -1;
@@ -101,7 +154,15 @@ static esp_err_t print_real_time_stats(TickType_t xTicksToWait)
         if (k >= 0) {
             uint32_t task_elapsed_time = end_array[k].ulRunTimeCounter - start_array[i].ulRunTimeCounter;
             uint32_t percentage_time = (task_elapsed_time * 100UL) / (total_elapsed_time * portNUM_PROCESSORS);
-            printf("| %s | %d | %d%%\n", start_array[i].pcTaskName, task_elapsed_time, percentage_time);
+
+            accumulated_info_t buf = {
+                .task_name = (char *)start_array[i].pcTaskName,
+                .time = task_elapsed_time,
+            };
+            set_accumulated_info(&buf);
+            accumulated_info_t *res = get_accumulated_info(start_array[i].pcTaskName);
+
+            printf("| %s | %d | %lld | %d%%\n", start_array[i].pcTaskName, task_elapsed_time, res->time, percentage_time);
         }
     }
 
@@ -116,6 +177,8 @@ static esp_err_t print_real_time_stats(TickType_t xTicksToWait)
             printf("| %s | Created\n", end_array[i].pcTaskName);
         }
     }
+
+    end_calc_accumulated_info();
     ret = ESP_OK;
 
 exit:    //Common return path
@@ -134,7 +197,7 @@ static void stats_task(void *arg)
         } else {
             printf("Error getting real time stats\n");
         }
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
