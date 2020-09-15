@@ -189,6 +189,7 @@ static void ota_example_task(void *pvParameter)
     int64_t time_write = 0; 
     int64_t time_total_start = esp_timer_get_time();
 
+    stats_monitor_reset_accumulated_infos();
     while (1) {
         int64_t time_start = esp_timer_get_time();
         int data_read = esp_http_client_read(client, ota_write_data, BUFFSIZE);
