@@ -1,17 +1,18 @@
 /* FreeRTOS Real Time Stats Example
 
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
+   This example code is in the Public Domain (or CC0 licensed, at your option.) 
+ 
    Unless required by applicable law or agreed to in writing, this
    software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
    CONDITIONS OF ANY KIND, either express or implied.
 */
 
+#include "string.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_err.h"
 #include "esp_log.h"
-#include "stats_monitor.h"
+#include "stats.h"
 
 #define STATS_TICKS         pdMS_TO_TICKS(1000)
 #define STATS_TASK_PRIO     3
@@ -27,7 +28,7 @@ typedef struct {
 static const char *TAG = "stats_monitor";
 static accumulated_info_t s_accumulated_infos[ACCUMULATED_INFO_NUM];
 
-void stats_monitor_reset_accumulated_infos(void) {
+void stats_reset_accumulated_infos(void) {
     for (int i = 0; i < ACCUMULATED_INFO_NUM; i++) {
         s_accumulated_infos[i].task_name = NULL;
         s_accumulated_infos[i].time = 0;
@@ -210,7 +211,67 @@ static void stats_task(void *arg)
     }
 }
 
-void stats_monitor_init(void) {
+void stats_init(void) {
     //Create and start stats task
     xTaskCreatePinnedToCore(stats_task, "stats", 4096, NULL, STATS_TASK_PRIO, NULL, tskNO_AFFINITY);
+}
+
+static void accumulate_time(int64_t *timer, int64_t start_time, int64_t end_time) {
+    int64_t duration = end_time - start_time;
+    *timer += duration;
+    // ESP_LOGW(TAG, "duration=%lld", duration);
+    // ESP_LOGW(TAG, "accumulate time=%lld", *timer);
+}
+
+stats_run_time_t *stats_run_time_init(const char* name) {
+    stats_run_time_t *buf = malloc(sizeof(stats_run_time_t));
+    assert(buf != NULL);
+    strcpy(buf->name, name);
+    buf->time = 0;
+    buf->start = 0;
+    buf->state = STATS_MEASURE_STOP;
+    return buf;
+}
+
+void stats_run_time_start(stats_run_time_t *handler) {
+    if (handler == NULL) {
+        ESP_LOGE(TAG, "handler is NULL");
+        return;
+    }
+    if (handler->state == STATS_MEASURE_START) {
+        ESP_LOGE(TAG, "run time measurement is already started");
+        return;
+    }
+    handler->state = STATS_MEASURE_START;
+    handler->start = esp_timer_get_time();
+}
+
+void stats_run_time_stop(stats_run_time_t *handler) {
+    if (handler == NULL) {
+        ESP_LOGE(TAG, "handler is NULL");
+        return;
+    }
+    if (handler->state == STATS_MEASURE_STOP) {
+        ESP_LOGE(TAG, "run time measurement is not started");
+        return;
+    }
+    handler->state = STATS_MEASURE_STOP;
+    handler->time += esp_timer_get_time() - handler->start;
+}
+
+void stats_run_time_free(stats_run_time_t *handler) {
+    if (handler == NULL) {
+        ESP_LOGE(TAG, "handler is NULL");
+        return;
+    }
+    free(handler);
+    handler = NULL;
+}
+
+void stats_run_time_print(const stats_run_time_t *handler) {
+    if (handler == NULL) {
+        ESP_LOGE(TAG, "handler is NULL");
+        return;
+    }
+    ESP_LOGI(TAG, "run time: %s=%lld", handler->name, handler->time);
 }
