@@ -17,7 +17,7 @@
 #define STATS_TICKS         pdMS_TO_TICKS(1000)
 #define STATS_TASK_PRIO     3
 #define ARRAY_SIZE_OFFSET   5   //Increase this if print_real_time_stats returns ESP_ERR_INVALID_SIZE
-#define ACCUMULATED_INFO_NUM 16
+#define ACCUMULATED_INFO_NUM 32
 
 typedef struct {
     char *task_name;
